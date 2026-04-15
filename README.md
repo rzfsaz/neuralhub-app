@@ -209,4 +209,5 @@ curl -X POST https://api.neuralhub.dev/api/prompts \
 - [ ] Rate limit `/api/prompts` by user plan tier
 
 ## License
-MIT
+rzfsaz
+
