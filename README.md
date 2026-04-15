@@ -30,63 +30,62 @@ A production-grade AI SaaS platform built with Next.js 15, Node.js, PostgreSQL, 
   └─────────────────────────────────────────────────────┘
 ```
 
-## Quick Start
+## Panduan Pemasangan (Instalasi)
 
-### 1. Prerequisites
-- Node.js 20+
-- Docker & Docker Compose
-- pnpm (recommended) or npm
+NeuralHub berjalan menggunakan **PostgreSQL**, **Redis**, dan **Node.js** di belakang layar. Ikuti panduan ini sesuai sistem operasi Anda:
 
-### 2. Clone & Install
+### 1. Kebutuhan Sistem (Prerequisites)
+- [Node.js 24 LTS+](https://nodejs.org/en) – Dibutuhkan untuk menjalankan framework server UI.
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) – Untuk menyalakan Database secara instan, pastikan aplikasi ini menyala di latar belakang komputer Anda!
+
+### 2. Unduh & Persiapkan (Mac / Windows)
+
+Buka aplikasi **Terminal** (di macOS) atau **Git Bash / PowerShell** (di Windows) lalu jalankan:
 
 ```bash
-git clone https://github.com/yourorg/neuralhub
-cd neuralhub
-pnpm install
+# Clone repository
+git clone https://github.com/rzfsaz/neuralhub-app.git
+cd neuralhub-app
+
+# Install dependencies (packages)
+npm install
 ```
 
-### 3. Environment Setup
+### 3. Konfigurasi Rahasia (Environment)
+Anda harus membuat file konfigurasi `.env.local`:
 
+**Di macOS:**
 ```bash
 cp .env.example .env.local
-# Fill in your values (see comments in .env.example)
-
-# Generate encryption master key
-openssl rand -hex 32  # → paste as ENCRYPTION_MASTER_KEY
-
-# Generate NextAuth secret
-openssl rand -base64 32  # → paste as NEXTAUTH_SECRET
 ```
+**Di Windows (PowerShell):**
+```powershell
+Copy-Item .env.example .env.local
+```
+*Catatan: Isi nilai-nilai API Key di dalam `.env.local` (*misalnya kredensial Stripe/OpenAI, dll*).*
 
-### 4. Start Infrastructure
+### 4. Nyalakan Database Induk (Semua OS)
+
+Pastikan aplikasi **Docker Desktop** sudah dibuka dan logo pausnya berwarna hijau! Lalu eksekusi:
 
 ```bash
-# Start PostgreSQL + Redis
 docker compose -f docker/docker-compose.yml up -d
-
-# Optional: start PgAdmin + RedisInsight
-docker compose -f docker/docker-compose.yml --profile tools up -d
 ```
+*(Perintah ini akan secara otomatis mengunduh & menyalakan PostgreSQL dan Redis di memori mesin Anda secara tersembunyi/daemon)*.
 
-### 5. Database Setup
+### 5. Bangun Pondasi & Jalankan (Run)
+
+Tarik skema database Prisma dan luncurkan aplikasi Desktop server Anda:
 
 ```bash
-# Generate Prisma client
-pnpm db:generate
+# Eksekusi migrasi tabel awal
+npx prisma db push
 
-# Run migrations
-pnpm db:migrate
-
-# Seed with model pricing data
-pnpm db:seed
+# Menjalankan server aplikasi NeuralHub
+npm run dev
 ```
 
-### 6. Run Dev Server
-
-```bash
-pnpm dev
-# → http://localhost:3000
-```
+Selamat! 🚀 Aplikasi sekarang bisa diakses di peramban web pada alamat `http://localhost:3000` atau Anda bisa menggunakan _Shortcut Mac App_ khusus yang otomatis kita buat!
 
 ## Project Structure
 
