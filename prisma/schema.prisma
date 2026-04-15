@@ -1,0 +1,265 @@
+// NeuralHub · Prisma Schema
+// Provider: PostgreSQL  |  ORM: Prisma 5.x
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// Auth & Identity
+// ─────────────────────────────────────────────
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  avatarUrl     String?
+  passwordHash  String?
+  emailVerified DateTime?
+
+  plan          Plan     @default(FREE)
+  stripeCustomerId      String?  @unique
+  stripeSubscriptionId  String?  @unique
+  currentPeriodEnd      DateTime?
+
+  monthlyTokenBudget  BigInt  @default(1000000)    // 1M tokens
+  monthlyCostBudget   Float   @default(5.0)        // $5 USD
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projects      Project[]
+  apiKeys       UserApiKey[]
+  providerKeys  ProviderKey[]
+  promptRuns    PromptRun[]
+  usageDaily    UsageDaily[]
+  usageMonthly  UsageMonthly[]
+
+  @@map("users")
+}
+
+enum Plan {
+  FREE
+  PRO
+  TEAM
+  ENTERPRISE
+}
+
+// ─────────────────────────────────────────────
+// Projects
+// ─────────────────────────────────────────────
+model Project {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  slug        String
+
+  defaultProvider  AIProvider @default(ANTHROPIC)
+  defaultModel     String     @default("claude-sonnet-4-6")
+  systemPrompt     String?    @db.Text
+
+  status      ProjectStatus @default(ACTIVE)
+  isArchived  Boolean       @default(false)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  promptRuns  PromptRun[]
+
+  @@unique([userId, slug])
+  @@map("projects")
+}
+
+enum ProjectStatus {
+  ACTIVE
+  STAGING
+  DEVELOPMENT
+  ARCHIVED
+}
+
+// ─────────────────────────────────────────────
+// AI Provider & Model Definitions
+// ─────────────────────────────────────────────
+enum AIProvider {
+  ANTHROPIC
+  OPENAI
+  GOOGLE
+  MISTRAL
+  COHERE
+}
+
+model ModelConfig {
+  id       String     @id @default(cuid())
+  provider AIProvider
+  modelId  String     // e.g. "claude-sonnet-4-6"
+  label    String     // display name
+  isActive Boolean    @default(true)
+
+  inputCostPer1kTokens  Float   // USD
+  outputCostPer1kTokens Float   // USD
+  contextWindow         Int     // tokens
+  supportsStreaming      Boolean @default(true)
+  supportsVision        Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@unique([provider, modelId])
+  @@map("model_configs")
+}
+
+// ─────────────────────────────────────────────
+// Encrypted Provider API Keys (per user)
+// ─────────────────────────────────────────────
+model ProviderKey {
+  id       String     @id @default(cuid())
+  userId   String
+  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  provider AIProvider
+  encryptedKey  String   @db.Text  // AES-256-GCM encrypted
+  keyIv         String             // initialization vector (hex)
+  keyTag        String             // auth tag (hex)
+  lastTestedAt  DateTime?
+  isActive      Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, provider])
+  @@map("provider_keys")
+}
+
+// ─────────────────────────────────────────────
+// Platform API Keys (for users calling NeuralHub API)
+// ─────────────────────────────────────────────
+model UserApiKey {
+  id       String   @id @default(cuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name          String
+  keyHash       String  @unique   // bcrypt hash of the full key
+  keyPrefix     String            // first 12 chars for display: nhub_sk_live_xxxx...
+  isActive      Boolean @default(true)
+  lastUsedAt    DateTime?
+  expiresAt     DateTime?
+
+  createdAt DateTime @default(now())
+
+  promptRuns  PromptRun[]
+
+  @@map("user_api_keys")
+}
+
+// ─────────────────────────────────────────────
+// Prompt Execution Runs
+// ─────────────────────────────────────────────
+model PromptRun {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  projectId  String?
+  project    Project? @relation(fields: [projectId], references: [id])
+  apiKeyId   String?
+  apiKey     UserApiKey? @relation(fields: [apiKeyId], references: [id])
+
+  // Request
+  provider     AIProvider
+  model        String
+  systemPrompt String?   @db.Text
+  userPrompt   String    @db.Text
+  temperature  Float?
+  maxTokens    Int?
+  stream       Boolean   @default(false)
+
+  // Response
+  status       RunStatus @default(PENDING)
+  response     String?   @db.Text
+  stopReason   String?
+  errorMessage String?
+
+  // Token accounting
+  inputTokens  Int @default(0)
+  outputTokens Int @default(0)
+  totalTokens  Int @default(0)
+
+  // Cost (in USD)
+  inputCost    Float @default(0)
+  outputCost   Float @default(0)
+  totalCost    Float @default(0)
+
+  // Latency
+  ttfbMs  Int?   // time to first byte (streaming)
+  totalMs Int?   // total duration
+
+  // Metadata
+  requestIp    String?
+  userAgent    String?
+  metadata     Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([projectId, createdAt(sort: Desc)])
+  @@index([provider, createdAt(sort: Desc)])
+  @@map("prompt_runs")
+}
+
+enum RunStatus {
+  PENDING
+  STREAMING
+  SUCCESS
+  ERROR
+  CANCELLED
+}
+
+// ─────────────────────────────────────────────
+// Usage Aggregations (pre-computed for dashboards)
+// ─────────────────────────────────────────────
+model UsageDaily {
+  id       String @id @default(cuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  date         DateTime  // truncated to day
+  provider     AIProvider?  // null = total across all providers
+
+  requests     Int   @default(0)
+  inputTokens  BigInt @default(0)
+  outputTokens BigInt @default(0)
+  totalTokens  BigInt @default(0)
+  totalCost    Float  @default(0)
+  errorCount   Int    @default(0)
+
+  @@unique([userId, date, provider])
+  @@index([userId, date(sort: Desc)])
+  @@map("usage_daily")
+}
+
+model UsageMonthly {
+  id       String @id @default(cuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  year     Int
+  month    Int   // 1-12
+  provider AIProvider?
+
+  requests     Int    @default(0)
+  inputTokens  BigInt @default(0)
+  outputTokens BigInt @default(0)
+  totalTokens  BigInt @default(0)
+  totalCost    Float  @default(0)
+  errorCount   Int    @default(0)
+
+  @@unique([userId, year, month, provider])
+  @@map("usage_monthly")
+}
